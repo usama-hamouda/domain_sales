@@ -47,7 +47,7 @@ CHROME_USER_DATA = r"C:\ChromeDebugGIndex"
 CHROME_PROFILE = "Default"
 
 # ── Apify config ───────────────────────────────────────────────────────────────
-APIFY_PROXY_PASSWORD = os.environ.get("APIFY_PROXY_PASSWORD", "apify_proxy_8lRiR1KVjeDCxwj7sAHcZabybGXpuY3lptGL")
+APIFY_PROXY_PASSWORD = os.environ.get("APIFY_PROXY_PASSWORD")
 APIFY_PROXY_HOST = "proxy.apify.com"
 APIFY_PROXY_PORT = 8000
 APIFY_PROXY_USERNAME = "groups-GOOGLE_SERP"
