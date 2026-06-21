@@ -1,0 +1,16 @@
+[Unit]
+Description=Domain Sales Platform (Node.js)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/domain-sales/backend
+EnvironmentFile=/var/www/domain-sales/.env
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
