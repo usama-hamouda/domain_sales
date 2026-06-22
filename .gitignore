@@ -1,9 +1,6 @@
 .env
 backend/node_modules/
-backend/domain_sales.db
-backend/domain_sales.db-journal
-backend/domain_sales.db-wal
-backend/domain_sales.db-shm
+
 __pycache__/
 *.pyc
 .python-version
