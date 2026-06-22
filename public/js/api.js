@@ -1,4 +1,4 @@
-const API = "";
+const API = "/domsales";
 
 async function api(path, opts = {}) {
   const res = await fetch(API + path, {
