@@ -26,7 +26,7 @@ export async function initCampaignsModule(root) {
           <span class="toolbar-title" id="campTitle">Select a campaign</span>
           <button class="warn" id="btnDeleteDomain" disabled>Delete Selected</button>
         </div>
-        <div id="campTableHost" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0"></div>
+        <div id="campTableHost" class="flex-table-host"></div>
       </div>
     </div>
   `;

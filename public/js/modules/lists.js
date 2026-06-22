@@ -137,7 +137,7 @@ export async function initListsModule(root) {
         <div class="proc-bar"><div class="proc-bar-fill" id="procBarFill"></div></div>
         <div class="proc-status" id="procStatus" style="font-size:12px;color:var(--text-dim);padding:2px 8px"></div>
         <div class="stats-row" id="listStats"></div>
-        <div id="tableHost" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0"></div>
+        <div id="tableHost" class="flex-table-host"></div>
       </div>
     </div>
     <div class="modal-overlay hidden" id="campaignModal">

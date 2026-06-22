@@ -121,7 +121,7 @@ export async function initFinalProspectsModule(root, params = {}) {
           <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px">
             Curated prospects for outreach. Assign a marketing account per prospect below, or let round-robin auto-assign when added.
           </p>
-          <div id="finalProspectTableHost" style="height:calc(100vh - 200px);display:flex;flex-direction:column;overflow:hidden"></div>
+          <div id="finalProspectTableHost" class="flex-table-host"></div>
         </div>
       </div>
     </div>

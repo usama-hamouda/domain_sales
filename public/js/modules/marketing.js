@@ -386,7 +386,7 @@ export async function initMarketingModule(root, params = {}) {
         <div class="card" style="padding-bottom:8px">
           <div id="prospectTabs" style="display:flex;gap:8px;flex-wrap:wrap"></div>
         </div>
-        <div id="prospectTableHost" style="height:calc(100vh - 320px);display:flex;flex-direction:column;overflow:hidden"></div>
+        <div id="prospectTableHost" class="flex-table-host"></div>
       </div>
     </div>
     <div class="modal-overlay hidden" id="prospectModal">

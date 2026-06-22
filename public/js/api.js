@@ -1,4 +1,11 @@
-const API = "/domsales";
+// const API = "/domsales";
+const API = (() => {
+  const script = document.currentScript;
+  if (script && script.src) {
+    return new URL(script.src).pathname.replace(/\/js\/api\.js$/, "");
+  }
+  return "";
+})();
 
 async function api(path, opts = {}) {
   const res = await fetch(API + path, {

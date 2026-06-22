@@ -63,6 +63,7 @@ class DataTable {
   _render() {
     const sorted = this._sortedRows();
     const cols = this.columns;
+    const touchDevice = window.matchMedia("(max-width: 768px), (pointer: coarse)").matches;
 
     let html = `<div class="table-container"><div class="table-scroll"><table class="data-table"><thead><tr>`;
     if (this.selectable) html += `<th class="sticky-col" style="left:0;width:36px">☑</th>`;
@@ -73,7 +74,8 @@ class DataTable {
       const sortedCls = this.sortCol === col.key ? `sorted-${this.sortDir}` : "";
       const stickyCls = isSticky ? "sticky-col" : "";
       const stickyStyle = isSticky ? this._stickyStyle(col.key) : "";
-      html += `<th class="${sortCls} ${sortedCls} ${stickyCls}" data-col="${esc(col.key)}" data-ci="${ci}"${stickyStyle ? ` style="${stickyStyle}"` : ""} draggable="true">
+      const dragAttr = touchDevice ? "" : ' draggable="true"';
+      html += `<th class="${sortCls} ${sortedCls} ${stickyCls}" data-col="${esc(col.key)}" data-ci="${ci}"${stickyStyle ? ` style="${stickyStyle}"` : ""}${dragAttr}>
         <span class="col-drag">⠿</span>${esc(col.label || col.key)}
       </th>`;
     });

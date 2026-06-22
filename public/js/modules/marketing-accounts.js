@@ -72,7 +72,7 @@ export async function initMarketingAccountsModule(root, params = {}) {
           <button id="btnEditAccount" class="hidden">Edit</button>
           <button id="btnDeleteAccount" class="warn hidden">Delete</button>
         </div>
-        <div id="accountMainHost" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;padding:12px">
+        <div id="accountMainHost" class="flex-table-host" style="padding:12px">
           <p style="color:var(--text-dim);font-size:13px">Manage marketing accounts used for outreach. Each account can include email, WhatsApp, LinkedIn, and other channels. Prospects on the final list are assigned one account in round-robin order.</p>
         </div>
       </div>
@@ -485,7 +485,7 @@ async function loadAccountDetail(id) {
       ${renderChannelGrid(account)}
     </div>
     <h4 style="margin:0 0 8px;font-size:13px">Prospects & message tracking</h4>
-    <div id="accountProspectHost" style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:200px"></div>
+    <div id="accountProspectHost" class="flex-table-host" style="min-height:200px"></div>
   `;
 
   const pHost = document.getElementById("accountProspectHost");

@@ -225,6 +225,9 @@ textarea:focus, input:focus { border-color: var(--accent); }
   flex: 1;
   overflow: auto;
   min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
 }
 
 .data-table {
@@ -604,4 +607,335 @@ button.final-added:disabled {
   font-size: 10px;
   padding: 3px 6px;
   white-space: nowrap;
+}
+
+/* ── Flex table host (replaces brittle calc(100vh) heights) ── */
+.flex-table-host {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 240px;
+}
+
+.main-panel > .detail-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.detail-panel .card:has(.flex-table-host) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 0;
+}
+
+/* ── Mobile layout ── */
+.nav-menu-btn,
+.sidebar-mobile-toggle,
+.sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  :root {
+    --sidebar-w: 100%;
+    --nav-h: 48px;
+  }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  /* Top nav: hamburger + collapsible tabs */
+  .top-nav {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--nav-h);
+    padding: 8px 10px;
+    gap: 6px;
+    position: relative;
+    z-index: 50;
+  }
+
+  .nav-menu-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .logo {
+    font-size: 14px;
+    margin-right: 0;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .nav-tabs-wrap {
+    display: none;
+    width: 100%;
+    flex-direction: column;
+    gap: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border);
+  }
+
+  .top-nav.nav-open .nav-tabs-wrap {
+    display: flex;
+  }
+
+  .nav-tab {
+    padding: 10px 12px;
+    font-size: 14px;
+    text-align: left;
+  }
+
+  .proc-status {
+    display: none;
+  }
+
+  /* App body: sidebar drawer + full-width main */
+  .app-body {
+    position: relative;
+    flex-direction: column;
+  }
+
+  .sidebar-mobile-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    background: var(--surface2);
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-bright);
+    text-align: left;
+    flex-shrink: 0;
+  }
+
+  .sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 60;
+  }
+
+  .app-body.sidebar-open .sidebar-backdrop {
+    display: block;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(300px, 88vw);
+    z-index: 70;
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .app-body.sidebar-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .main-panel {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+  }
+
+  /* Toolbars */
+  .toolbar {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .toolbar-title {
+    font-size: 13px;
+    min-width: 0;
+    flex: 1 1 100%;
+    order: -1;
+  }
+
+  .toolbar > button,
+  .toolbar > .btn,
+  .toolbar > label,
+  .toolbar > .proc-results-mode {
+    font-size: 12px;
+    padding: 8px 10px;
+    min-height: 36px;
+  }
+
+  .outreach-toolbar-actions {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .import-area {
+    padding: 8px 10px;
+  }
+
+  .import-area textarea {
+    height: 60px;
+    font-size: 13px;
+  }
+
+  .stats-row {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  /* Tables: isolated touch scroll, compact cells */
+  .flex-table-host {
+    min-height: 280px;
+    max-height: none;
+  }
+
+  .table-container {
+    min-height: 200px;
+  }
+
+  .table-scroll {
+    overscroll-behavior: contain;
+    touch-action: pan-x pan-y;
+    /* Hint that table scrolls horizontally */
+    scrollbar-width: thin;
+  }
+
+  .data-table {
+    font-size: 11px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 8px 8px;
+  }
+
+  .data-table th .col-drag {
+    display: none;
+  }
+
+  .account-assign-select {
+    max-width: 120px;
+    font-size: 12px;
+  }
+
+  .prospect-actions-cell {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .card:has(.data-table) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Detail / split views */
+  .split-view {
+    flex-direction: column;
+  }
+
+  .main-panel > .detail-panel {
+    padding: 10px;
+    overflow: hidden;
+  }
+
+  .main-panel > .detail-panel:not(:has(.flex-table-host)) {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  #outreachMainPanel,
+  .main-panel[style*="overflow-y:auto"] {
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Modals */
+  .modal {
+    min-width: 0;
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    max-height: 90dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 12px;
+  }
+
+  .result-modal,
+  .scrape-progress-modal {
+    width: calc(100vw - 24px);
+  }
+
+  .result-modal-body {
+    max-height: 60dvh;
+  }
+
+  /* Touch-friendly controls */
+  button, .btn, .import-label {
+    min-height: 36px;
+  }
+
+  .icon-btn {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 6px 10px;
+  }
+
+  input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+  }
+
+  .message-slot .channel-btns button {
+    min-height: 36px;
+    padding: 6px 10px;
+  }
+
+  .toast {
+    left: 12px;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .toolbar-title {
+    font-size: 12px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 6px 6px;
+    font-size: 10px;
+  }
+
+  .msg-slot-cell {
+    min-width: 72px;
+  }
 }
