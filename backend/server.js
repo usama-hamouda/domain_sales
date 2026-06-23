@@ -40,6 +40,7 @@ const messageTracking = require("./services/message-tracking");
 const contactSync = require("./services/prospect-contact-sync");
 const { bindPhoneWhatsApp } = require("./services/phone-whatsapp");
 const remoteDbSync = require("./services/remote-db-sync");
+const syncApply = require("./services/sync-apply");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -59,11 +60,31 @@ app.get("/api/health", (req, res) => {
     app: "domain-sales",
     port: PORT,
     remoteDbSync: remoteDbSync.getStatus(),
+    syncReceiver: syncApply.isReceiverEnabled(),
   });
 });
 
 app.get("/api/sync/status", (req, res) => {
-  res.json(remoteDbSync.getStatus());
+  const status = remoteDbSync.getStatus();
+  if (syncApply.isReceiverEnabled()) {
+    status.syncReceiver = true;
+    status.receiverOutbox = 0;
+  }
+  res.json(status);
+});
+
+app.post("/api/sync/apply", syncApply.authMiddleware, (req, res) => {
+  try {
+    const batch = req.body?.batch;
+    if (!Array.isArray(batch)) {
+      return res.status(400).json({ error: "batch array required" });
+    }
+    const result = syncApply.applyBatch(db, batch);
+    res.json(result);
+  } catch (e) {
+    console.error("POST /api/sync/apply:", e);
+    res.status(500).json({ error: e.message || "Failed to apply sync batch" });
+  }
 });
 
 app.post("/api/sync/push", async (req, res) => {
@@ -737,6 +758,11 @@ app.listen(PORT, HOST, () => {
   remoteDbSync.startWatcher();
   console.log(`Domain Sales app → http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`);
   if (remoteDbSync.isEnabled()) {
-    console.log("[remote-db-sync] Auto-push to VPS is ON");
+    const status = remoteDbSync.getStatus();
+    const mode = status.mode === "api" ? "API push" : "SCP upload";
+    console.log(`[remote-sync] Auto-push to VPS is ON (${mode})`);
+  }
+  if (syncApply.isReceiverEnabled()) {
+    console.log("[sync-receiver] Accepting replication at POST /api/sync/apply");
   }
 });

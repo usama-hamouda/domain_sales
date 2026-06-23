@@ -321,17 +321,21 @@ async function openChannel(channel, prospect, slot, accountMap) {
   }
 
   const { subject, body } = getSlotContent(prospect.id, slot);
+  const platform = detectPlatform();
   const launch = buildChannelLaunch(channel, {
     prospect,
     senderIdentifier: assignment.account_identifier,
     subject,
     body,
-  }, outreachState.platform);
+  }, platform);
 
-  if (!launch.url) {
+  if (!launch.appUrl && !launch.webUrl) {
     toast(launch.hint);
     return;
   }
+
+  // Open immediately while the tap gesture is still active (required on iOS for deep links)
+  openOutreachUrl(launch.appUrl, launch.webUrl, platform);
 
   if (launch.needsClipboard) {
     const copied = await copyToClipboard(body);
@@ -343,6 +347,4 @@ async function openChannel(channel, prospect, slot, accountMap) {
   } else {
     toast(launch.hint, 4000);
   }
-
-  openOutreachUrl(launch.url, outreachState.platform);
 }

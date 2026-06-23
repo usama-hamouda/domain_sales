@@ -819,8 +819,24 @@ button.final-added:disabled {
   .table-scroll {
     overscroll-behavior: contain;
     touch-action: pan-x pan-y;
-    /* Hint that table scrolls horizontally */
     scrollbar-width: thin;
+  }
+
+  /* Disable left-sticky columns — they hide scrollable cells on narrow screens */
+  .data-table th.sticky-col,
+  .data-table td.sticky-col {
+    position: static !important;
+    left: auto !important;
+    z-index: auto !important;
+    box-shadow: none !important;
+    min-width: unset !important;
+    max-width: none !important;
+    width: auto !important;
+  }
+
+  .data-table.data-table--mobile .prospect-actions-cell {
+    flex-wrap: wrap;
+    max-width: 140px;
   }
 
   .data-table {

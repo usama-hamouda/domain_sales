@@ -31,6 +31,10 @@ class DataTable {
     return [...this.selected];
   }
 
+  _mobileLayout() {
+    return window.matchMedia("(max-width: 768px)").matches;
+  }
+
   _stickyKeys() {
     if (this.stickyKeys?.length) {
       return this.stickyKeys.filter((k) => this.columns.some((c) => c.key === k));
@@ -57,6 +61,7 @@ class DataTable {
   }
 
   _isSticky(colKey) {
+    if (this._mobileLayout()) return false;
     return this._stickyKeys().includes(colKey);
   }
 
@@ -64,9 +69,14 @@ class DataTable {
     const sorted = this._sortedRows();
     const cols = this.columns;
     const touchDevice = window.matchMedia("(max-width: 768px), (pointer: coarse)").matches;
+    const mobileLayout = this._mobileLayout();
 
-    let html = `<div class="table-container"><div class="table-scroll"><table class="data-table"><thead><tr>`;
-    if (this.selectable) html += `<th class="sticky-col" style="left:0;width:36px">☑</th>`;
+    let html = `<div class="table-container"><div class="table-scroll"><table class="data-table${mobileLayout ? " data-table--mobile" : ""}"><thead><tr>`;
+    if (this.selectable) {
+      html += mobileLayout
+        ? `<th style="width:36px">☑</th>`
+        : `<th class="sticky-col" style="left:0;width:36px">☑</th>`;
+    }
 
     cols.forEach((col, ci) => {
       const isSticky = this._isSticky(col.key);
@@ -87,7 +97,9 @@ class DataTable {
       const rowCls = [sel ? "selected" : "", this.rowClass ? this.rowClass(row) : ""].filter(Boolean).join(" ");
       html += `<tr class="${rowCls}" data-id="${row.id}">`;
       if (this.selectable) {
-        html += `<td class="sticky-col" style="left:0"><input type="checkbox" ${sel ? "checked" : ""} data-check="${row.id}"></td>`;
+        html += mobileLayout
+          ? `<td><input type="checkbox" ${sel ? "checked" : ""} data-check="${row.id}"></td>`
+          : `<td class="sticky-col" style="left:0"><input type="checkbox" ${sel ? "checked" : ""} data-check="${row.id}"></td>`;
       }
       cols.forEach((col) => {
         const isSticky = this._isSticky(col.key);
@@ -163,6 +175,18 @@ class DataTable {
         if (row && this.onRowAction) this.onRowAction(btn.dataset.action, row);
       });
     });
+
+    if (!this._resizeBound) {
+      this._resizeBound = true;
+      let wasMobile = this._mobileLayout();
+      window.addEventListener("resize", () => {
+        const mobile = this._mobileLayout();
+        if (mobile !== wasMobile) {
+          wasMobile = mobile;
+          this._render();
+        }
+      });
+    }
   }
 }
 

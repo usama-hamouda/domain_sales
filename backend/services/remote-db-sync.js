@@ -1,26 +1,32 @@
 const { spawn } = require("child_process");
 const fs = require("fs");
-const path = require("path");
 const { db, DB_PATH } = require("../db");
+const remoteApiSync = require("./remote-api-sync");
 
 const DEBOUNCE_MS = Number(process.env.REMOTE_DB_SYNC_DEBOUNCE_MS || 4000);
 
 let debounceTimer = null;
-let syncing = false;
+let scpSyncing = false;
 let watcherStarted = false;
-let lastSyncAt = null;
-let lastError = null;
-let pendingSync = false;
+let scpLastSyncAt = null;
+let scpLastError = null;
+let scpPendingSync = false;
 
-function isEnabled() {
+function isScpEnabled() {
   return process.env.REMOTE_DB_SYNC_ENABLED === "1"
     && process.env.REMOTE_SSH_HOST
-    && process.env.REMOTE_SSH_USER;
+    && process.env.REMOTE_SSH_USER
+    && process.env.REMOTE_API_SYNC_ENABLED !== "1";
 }
 
-function getConfig() {
+function isEnabled() {
+  return remoteApiSync.isEnabled() || isScpEnabled();
+}
+
+function getScpConfig() {
   return {
-    enabled: isEnabled(),
+    mode: "scp",
+    enabled: isScpEnabled(),
     host: process.env.REMOTE_SSH_HOST || null,
     user: process.env.REMOTE_SSH_USER || null,
     remotePath: process.env.REMOTE_DB_PATH || "/var/www/domain-sales/backend/domain_sales.db",
@@ -30,12 +36,15 @@ function getConfig() {
 }
 
 function getStatus() {
+  if (remoteApiSync.isEnabled()) {
+    return remoteApiSync.getStatus();
+  }
   return {
-    ...getConfig(),
-    syncing,
-    pendingSync,
-    lastSyncAt,
-    lastError,
+    ...getScpConfig(),
+    syncing: scpSyncing,
+    pendingSync: scpPendingSync,
+    lastSyncAt: scpLastSyncAt,
+    lastError: scpLastError,
   };
 }
 
@@ -96,18 +105,18 @@ function checkpointDatabase() {
   db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
 }
 
-async function syncNow() {
-  if (!isEnabled()) {
-    return { ok: false, error: "Remote DB sync is not configured" };
+async function scpSyncNow() {
+  if (!isScpEnabled()) {
+    return { ok: false, error: "SCP database sync is not configured" };
   }
-  if (syncing) {
-    pendingSync = true;
+  if (scpSyncing) {
+    scpPendingSync = true;
     return { ok: true, queued: true };
   }
 
-  syncing = true;
-  pendingSync = false;
-  lastError = null;
+  scpSyncing = true;
+  scpPendingSync = false;
+  scpLastError = null;
 
   const remotePath = process.env.REMOTE_DB_PATH || "/var/www/domain-sales/backend/domain_sales.db";
   const manageService = process.env.REMOTE_SERVICE_MANAGE !== "0";
@@ -125,11 +134,11 @@ async function syncNow() {
       await runSsh("sudo systemctl start domain-sales");
     }
 
-    lastSyncAt = new Date().toISOString();
+    scpLastSyncAt = new Date().toISOString();
     console.log(`[remote-db-sync] Pushed database to ${sshTarget()}:${remotePath}`);
-    return { ok: true, lastSyncAt };
+    return { ok: true, lastSyncAt: scpLastSyncAt, mode: "scp" };
   } catch (err) {
-    lastError = err.message;
+    scpLastError = err.message;
     console.error("[remote-db-sync]", err.message);
     if (manageService) {
       try {
@@ -138,22 +147,31 @@ async function syncNow() {
         // Best effort — remote may still be stopped.
       }
     }
-    return { ok: false, error: err.message };
+    return { ok: false, error: err.message, mode: "scp" };
   } finally {
-    syncing = false;
-    if (pendingSync) {
-      pendingSync = false;
-      setTimeout(() => { syncNow().catch(() => {}); }, 500);
+    scpSyncing = false;
+    if (scpPendingSync) {
+      scpPendingSync = false;
+      setTimeout(() => { scpSyncNow().catch(() => {}); }, 500);
     }
   }
 }
 
+async function syncNow() {
+  if (remoteApiSync.isEnabled()) return remoteApiSync.syncNow();
+  return scpSyncNow();
+}
+
 function scheduleSyncAfterWrite() {
-  if (!isEnabled()) return;
-  pendingSync = true;
+  if (remoteApiSync.isEnabled()) {
+    remoteApiSync.scheduleSyncAfterWrite();
+    return;
+  }
+  if (!isScpEnabled()) return;
+  scpPendingSync = true;
   clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
-    syncNow().catch(() => {});
+    scpSyncNow().catch(() => {});
   }, DEBOUNCE_MS);
 }
 
@@ -169,11 +187,18 @@ function watchDatabaseFile(filePath) {
 }
 
 function startWatcher() {
-  if (!isEnabled() || watcherStarted) return;
+  if (watcherStarted) return;
   watcherStarted = true;
+
+  if (remoteApiSync.isEnabled()) {
+    console.log(`[remote-api-sync] Enabled → ${process.env.REMOTE_API_URL} (debounce ${remoteApiSync.getConfig().debounceMs}ms)`);
+    return;
+  }
+
+  if (!isScpEnabled()) return;
   watchDatabaseFile(DB_PATH);
   watchDatabaseFile(`${DB_PATH}-wal`);
-  console.log(`[remote-db-sync] Enabled → ${sshTarget()} (debounce ${DEBOUNCE_MS}ms)`);
+  console.log(`[remote-db-sync] SCP enabled → ${sshTarget()} (debounce ${DEBOUNCE_MS}ms)`);
 }
 
 function middleware() {

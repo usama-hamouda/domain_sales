@@ -22,6 +22,10 @@ const PROSPECT_FILTERS = [
   { value: "due_today", label: "Due today" },
 ];
 
+function isMobileTableLayout() {
+  return window.matchMedia("(max-width: 768px)").matches;
+}
+
 function showWarnings(warnings) {
   if (!warnings?.length) return;
   toast(warnings.join(" "), 8000);
@@ -308,6 +312,9 @@ function renderProspectFilterBar(totalCount, visibleCount) {
 
 function renderProspectTrackingTable(prospects, totalCount) {
   const slotHeaders = ["Initial", "FU 1", "FU 2", "FU 3", "FU 4"];
+  const mobile = isMobileTableLayout();
+  const prospectStickyCls = mobile ? "" : "sticky-col";
+  const prospectStickyStyle = mobile ? "" : ' style="left:0"';
   if (!prospects.length) {
     return `
       ${renderProspectFilterBar(totalCount, 0)}
@@ -326,10 +333,10 @@ function renderProspectTrackingTable(prospects, totalCount) {
       </div>
       <div class="table-container" style="flex:1;min-height:0">
         <div class="table-scroll">
-          <table class="data-table msg-tracking-table">
+          <table class="data-table msg-tracking-table${mobile ? " data-table--mobile" : ""}">
             <thead>
               <tr>
-                <th class="sticky-col" style="left:0">Prospect</th>
+                <th class="${prospectStickyCls}"${prospectStickyStyle}>Prospect</th>
                 <th>Domain</th>
                 <th>Start date</th>
                 ${slotHeaders.map((h) => `<th>${esc(h)}</th>`).join("")}
@@ -343,7 +350,7 @@ function renderProspectTrackingTable(prospects, totalCount) {
                 const fpId = p.final_prospect_id;
                 return `
                   <tr data-fp-id="${fpId}">
-                    <td class="sticky-col" style="left:0">
+                    <td class="${prospectStickyCls}"${prospectStickyStyle}>
                       <div>${esc(p.name || p.website || "—")}</div>
                       <div style="font-size:10px;color:var(--text-dim)">${esc(p.website || "")}</div>
                     </td>

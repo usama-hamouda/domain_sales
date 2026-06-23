@@ -377,6 +377,7 @@ try {
   db.exec("CREATE INDEX IF NOT EXISTS idx_fp_assignments_account ON final_prospect_account_assignments(marketing_account_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_prospect_assignments_prospect ON prospect_account_assignments(prospect_id)");
   require("./services/phone-whatsapp").migratePhoneWhatsAppBinding(db);
+  require("./services/sync-outbox").installTriggers(db);
 } catch (e) {
   console.error("Marketing accounts migration error:", e.message);
 }

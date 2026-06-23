@@ -1,5 +1,13 @@
 const CHANNEL_ORDER = ["gmail", "whatsapp", "linkedin", "instagram", "facebook"];
 
+const ANDROID_PACKAGES = {
+  gmail: "com.google.android.gm",
+  whatsapp: "com.whatsapp",
+  linkedin: "com.linkedin.android",
+  instagram: "com.instagram.android",
+  messenger: "com.facebook.orca",
+};
+
 export function detectPlatform() {
   const ua = navigator.userAgent || "";
   const isAndroid = /Android/i.test(ua);
@@ -14,6 +22,11 @@ function enc(value) {
 
 function digitsOnly(value) {
   return String(value || "").replace(/\D/g, "");
+}
+
+function buildAndroidIntent(path, packageName, fallbackUrl, scheme = "https") {
+  const intentPath = String(path).replace(/^https?:\/\//i, "");
+  return `intent://${intentPath}#Intent;scheme=${scheme};package=${packageName};S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
 }
 
 export function extractWhatsAppPhone(value) {
@@ -70,73 +83,161 @@ export function extractFacebookSlug(value) {
   return m ? m[1] : "";
 }
 
-export function buildGmailUrl({ senderEmail, to, subject, body }, platform = detectPlatform()) {
+export function buildGmailUrls({ senderEmail, to, subject, body }, platform = detectPlatform()) {
+  const webUrl = `https://mail.google.com/mail/?authuser=${enc(senderEmail)}&view=cm&fs=1&to=${enc(to)}&su=${enc(subject)}&body=${enc(body)}`;
+
   if (platform.isAndroid) {
-    const fallback = `https://mail.google.com/mail/?authuser=${encodeURIComponent(senderEmail || "")}&view=cm&fs=1&to=${encodeURIComponent(to || "")}&su=${encodeURIComponent(subject || "")}&body=${encodeURIComponent(body || "")}`;
-    return `intent://send?to=${enc(to)}&subject=${enc(subject)}&body=${enc(body)}#Intent;scheme=mailto;package=com.google.android.gm;S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
+    const appUrl = buildAndroidIntent(
+      `send?to=${enc(to)}&subject=${enc(subject)}&body=${enc(body)}`,
+      ANDROID_PACKAGES.gmail,
+      webUrl,
+      "mailto",
+    );
+    return { appUrl, webUrl };
   }
+
   if (platform.isIOS) {
-    return `googlegmail://co?to=${enc(to)}&subject=${enc(subject)}&body=${enc(body)}`;
+    const appUrl = `googlegmail:///co?to=${enc(to)}&subject=${enc(subject)}&body=${enc(body)}`;
+    return { appUrl, webUrl };
   }
-  return `https://mail.google.com/mail/?authuser=${enc(senderEmail)}&view=cm&fs=1&to=${enc(to)}&su=${enc(subject)}&body=${enc(body)}`;
+
+  return { appUrl: null, webUrl };
 }
 
-export function buildWhatsAppUrl({ prospectWhatsApp, body }, platform = detectPlatform()) {
+export function buildWhatsAppUrls({ prospectWhatsApp, body }, platform = detectPlatform()) {
   const phone = extractWhatsAppPhone(prospectWhatsApp);
   const text = enc(body);
-  if (!phone) return `https://wa.me/?text=${text}`;
+  const webUrl = phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`;
 
   if (platform.isAndroid) {
-    const fallback = `https://wa.me/${phone}?text=${text}`;
-    return `intent://send?phone=${phone}&text=${text}#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url=${encodeURIComponent(fallback)};end`;
+    const path = phone ? `send?phone=${phone}&text=${text}` : `send?text=${text}`;
+    const appUrl = buildAndroidIntent(path, ANDROID_PACKAGES.whatsapp, webUrl, "whatsapp");
+    return { appUrl, webUrl };
   }
+
   if (platform.isIOS) {
-    return `whatsapp://send?phone=${phone}&text=${text}`;
+    const appUrl = phone
+      ? `whatsapp://send?phone=${phone}&text=${text}`
+      : `whatsapp://send?text=${text}`;
+    return { appUrl, webUrl };
   }
-  return `https://web.whatsapp.com/send?phone=${phone}&text=${text}`;
+
+  return {
+    appUrl: null,
+    webUrl: phone ? `https://web.whatsapp.com/send?phone=${phone}&text=${text}` : webUrl,
+  };
 }
 
-export function buildLinkedInUrl({ prospectLinkedIn }, platform = detectPlatform()) {
+export function buildLinkedInUrls({ prospectLinkedIn }, platform = detectPlatform()) {
   const webUrl = normalizeLinkedInUrl(prospectLinkedIn);
-  if (!webUrl) return null;
+  if (!webUrl) return { appUrl: null, webUrl: null };
   const slug = extractLinkedInSlug(prospectLinkedIn);
-  if (platform.isMobile && slug) {
-    return `linkedin://in/${slug}`;
+  if (!slug) return { appUrl: null, webUrl };
+
+  if (platform.isAndroid) {
+    const appUrl = buildAndroidIntent(
+      `www.linkedin.com/in/${slug}`,
+      ANDROID_PACKAGES.linkedin,
+      webUrl,
+    );
+    return { appUrl, webUrl };
   }
-  return webUrl;
+
+  if (platform.isIOS) {
+    return { appUrl: `linkedin://in/${slug}`, webUrl };
+  }
+
+  return { appUrl: null, webUrl };
 }
 
-export function buildInstagramUrl({ prospectInstagram }, platform = detectPlatform()) {
+export function buildInstagramUrls({ prospectInstagram }, platform = detectPlatform()) {
   const webUrl = normalizeInstagramUrl(prospectInstagram);
-  if (!webUrl) return null;
+  if (!webUrl) return { appUrl: null, webUrl: null };
   const handle = extractInstagramHandle(prospectInstagram);
-  if (platform.isMobile && handle) {
-    return `instagram://user?username=${enc(handle)}`;
+  if (!handle) return { appUrl: null, webUrl };
+
+  if (platform.isAndroid) {
+    const appUrl = buildAndroidIntent(
+      `instagram.com/_u/${handle}`,
+      ANDROID_PACKAGES.instagram,
+      webUrl,
+    );
+    return { appUrl, webUrl };
   }
-  return webUrl;
+
+  if (platform.isIOS) {
+    return { appUrl: `instagram://user?username=${enc(handle)}`, webUrl };
+  }
+
+  return { appUrl: null, webUrl };
 }
 
-export function buildFacebookUrl({ prospectFacebook }, platform = detectPlatform()) {
-  const webUrl = normalizeFacebookUrl(prospectFacebook);
-  if (!webUrl) return null;
+export function buildFacebookMessengerUrls({ prospectFacebook }, platform = detectPlatform()) {
+  const webProfile = normalizeFacebookUrl(prospectFacebook);
+  if (!webProfile) return { appUrl: null, webUrl: null };
   const slug = extractFacebookSlug(prospectFacebook);
-  if (platform.isMobile && slug) {
-    return `fb://profile/${slug}`;
+  const messengerWeb = slug ? `https://m.me/${slug}` : webProfile;
+
+  if (platform.isAndroid && slug) {
+    const appUrl = buildAndroidIntent(
+      `m.me/${slug}`,
+      ANDROID_PACKAGES.messenger,
+      messengerWeb,
+    );
+    return { appUrl, webUrl: messengerWeb };
   }
-  return webUrl;
+
+  if (platform.isIOS && slug) {
+    // m.me is a universal link — opens Messenger when installed, Safari otherwise
+    return { appUrl: messengerWeb, webUrl: webProfile };
+  }
+
+  return { appUrl: null, webUrl: messengerWeb };
 }
 
-export function openOutreachUrl(url, platform = detectPlatform()) {
-  if (!url) return;
-  if (platform.isAndroid && url.startsWith("intent://")) {
-    window.location.href = url;
+function openWithAppFallback(appUrl, webUrl) {
+  const fallback = webUrl || appUrl;
+  const timer = setTimeout(() => {
+    window.location.assign(fallback);
+  }, 2000);
+
+  const cancel = () => clearTimeout(timer);
+  window.addEventListener("pagehide", cancel, { once: true });
+  window.addEventListener("blur", cancel, { once: true });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) cancel();
+  }, { once: true });
+
+  window.location.href = appUrl;
+}
+
+/**
+ * Open outreach link — native app on mobile when possible, browser fallback otherwise.
+ * @param {string|null} appUrl - Deep link or Android intent
+ * @param {string|null} webUrl - HTTPS fallback (profile page, web compose, etc.)
+ */
+export function openOutreachUrl(appUrl, webUrl, platform = detectPlatform()) {
+  const web = webUrl || appUrl;
+  if (!web && !appUrl) return;
+
+  if (!platform.isMobile) {
+    window.open(web, "_blank", "noopener,noreferrer");
     return;
   }
-  if ((platform.isIOS || platform.isMobile) && /^[a-z][a-z0-9+.-]*:/i.test(url) && !url.startsWith("http")) {
-    window.location.href = url;
+
+  if (platform.isAndroid && appUrl?.startsWith("intent://")) {
+    window.location.href = appUrl;
     return;
   }
-  window.open(url, "_blank", "noopener,noreferrer");
+
+  const isCustomScheme = appUrl && /^[a-z][a-z0-9+.-]*:/i.test(appUrl) && !appUrl.startsWith("http");
+  if (isCustomScheme) {
+    openWithAppFallback(appUrl, web);
+    return;
+  }
+
+  // Universal links (e.g. m.me on iOS) or mobile web URLs
+  window.location.href = appUrl || web;
 }
 
 export async function copyToClipboard(text) {
@@ -149,28 +250,29 @@ export async function copyToClipboard(text) {
   }
 }
 
-/**
- * @returns {{ url: string|null, needsClipboard: boolean, hint: string }}
- */
 export function resolveProspectWhatsApp(prospect) {
   return (prospect?.phone || prospect?.whatsapp || "").trim();
 }
 
+/**
+ * @returns {{ appUrl: string|null, webUrl: string|null, needsClipboard: boolean, hint: string }}
+ */
 export function buildChannelLaunch(channel, { prospect, senderIdentifier, subject, body }, platform = detectPlatform()) {
   const sender = senderIdentifier || "";
 
   switch (channel) {
     case "gmail": {
       if (!prospect.email) {
-        return { url: null, needsClipboard: false, hint: "Prospect has no email address." };
+        return { appUrl: null, webUrl: null, needsClipboard: false, hint: "Prospect has no email address." };
       }
+      const urls = buildGmailUrls({
+        senderEmail: sender,
+        to: prospect.email,
+        subject,
+        body,
+      }, platform);
       return {
-        url: buildGmailUrl({
-          senderEmail: sender,
-          to: prospect.email,
-          subject,
-          body,
-        }, platform),
+        ...urls,
         needsClipboard: false,
         hint: `Compose in Gmail as ${sender}`,
       };
@@ -178,53 +280,86 @@ export function buildChannelLaunch(channel, { prospect, senderIdentifier, subjec
     case "whatsapp": {
       const number = resolveProspectWhatsApp(prospect);
       if (!number) {
-        return { url: null, needsClipboard: false, hint: "Prospect has no phone / WhatsApp number." };
+        return { appUrl: null, webUrl: null, needsClipboard: false, hint: "Prospect has no phone / WhatsApp number." };
       }
+      const urls = buildWhatsAppUrls({ prospectWhatsApp: number, body }, platform);
       return {
-        url: buildWhatsAppUrl({ prospectWhatsApp: number, body }, platform),
+        ...urls,
         needsClipboard: false,
         hint: `Send from WhatsApp account: ${sender}`,
       };
     }
     case "linkedin": {
       if (!prospect.linkedin) {
-        return { url: null, needsClipboard: false, hint: "Prospect has no LinkedIn profile." };
+        return { appUrl: null, webUrl: null, needsClipboard: false, hint: "Prospect has no LinkedIn profile." };
+      }
+      const urls = buildLinkedInUrls({ prospectLinkedIn: prospect.linkedin }, platform);
+      if (!urls.webUrl) {
+        return { appUrl: null, webUrl: null, needsClipboard: false, hint: "Prospect has no LinkedIn profile." };
       }
       return {
-        url: buildLinkedInUrl({ prospectLinkedIn: prospect.linkedin }, platform),
+        ...urls,
         needsClipboard: true,
         hint: `Open LinkedIn profile — send from account: ${sender}`,
       };
     }
     case "instagram": {
       if (!prospect.instagram) {
-        return { url: null, needsClipboard: false, hint: "Prospect has no Instagram profile." };
+        return { appUrl: null, webUrl: null, needsClipboard: false, hint: "Prospect has no Instagram profile." };
+      }
+      const urls = buildInstagramUrls({ prospectInstagram: prospect.instagram }, platform);
+      if (!urls.webUrl) {
+        return { appUrl: null, webUrl: null, needsClipboard: false, hint: "Prospect has no Instagram profile." };
       }
       return {
-        url: buildInstagramUrl({ prospectInstagram: prospect.instagram }, platform),
+        ...urls,
         needsClipboard: true,
         hint: `Open Instagram profile — send from account: ${sender}`,
       };
     }
     case "facebook": {
       if (!prospect.facebook) {
-        return { url: null, needsClipboard: false, hint: "Prospect has no Facebook profile." };
+        return { appUrl: null, webUrl: null, needsClipboard: false, hint: "Prospect has no Facebook profile." };
       }
-      const slug = extractFacebookSlug(prospect.facebook);
-      const messengerUrl = slug && platform.isMobile
-        ? `fb-messenger://user-thread/${slug}`
-        : slug
-          ? `https://m.me/${slug}`
-          : buildFacebookUrl({ prospectFacebook: prospect.facebook }, platform);
+      const urls = buildFacebookMessengerUrls({ prospectFacebook: prospect.facebook }, platform);
+      if (!urls.webUrl) {
+        return { appUrl: null, webUrl: null, needsClipboard: false, hint: "Prospect has no Facebook profile." };
+      }
       return {
-        url: messengerUrl || buildFacebookUrl({ prospectFacebook: prospect.facebook }, platform),
+        ...urls,
         needsClipboard: true,
-        hint: `Open Facebook / Messenger — send from account: ${sender}`,
+        hint: `Open Messenger — send from account: ${sender}`,
       };
     }
     default:
-      return { url: null, needsClipboard: false, hint: "Unknown channel." };
+      return { appUrl: null, webUrl: null, needsClipboard: false, hint: "Unknown channel." };
   }
+}
+
+// Legacy single-url exports for any external callers
+export function buildGmailUrl(params, platform) {
+  const { webUrl } = buildGmailUrls(params, platform);
+  return webUrl;
+}
+
+export function buildWhatsAppUrl(params, platform) {
+  const { webUrl } = buildWhatsAppUrls(params, platform);
+  return webUrl;
+}
+
+export function buildLinkedInUrl(params, platform) {
+  const { appUrl, webUrl } = buildLinkedInUrls(params, platform);
+  return appUrl || webUrl;
+}
+
+export function buildInstagramUrl(params, platform) {
+  const { appUrl, webUrl } = buildInstagramUrls(params, platform);
+  return appUrl || webUrl;
+}
+
+export function buildFacebookUrl(params, platform) {
+  const { webUrl } = buildFacebookMessengerUrls(params, platform);
+  return webUrl;
 }
 
 export { CHANNEL_ORDER };
