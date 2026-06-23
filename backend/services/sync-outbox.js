@@ -110,6 +110,16 @@ function peekOutbox(db, limit = 300) {
   `).all(limit);
 }
 
+function peekOutboxSince(db, afterId = 0, limit = 300) {
+  return db.prepare(`
+    SELECT id, table_name, op, row_pk, row_json, created_at
+    FROM sync_outbox
+    WHERE id > ?
+    ORDER BY id
+    LIMIT ?
+  `).all(afterId, limit);
+}
+
 function deleteOutboxUpTo(db, maxId) {
   db.prepare("DELETE FROM sync_outbox WHERE id <= ?").run(maxId);
 }
@@ -123,6 +133,7 @@ module.exports = {
   setSuppressOutbox,
   peekOutbox,
   deleteOutboxUpTo,
+  peekOutboxSince,
   outboxCount,
   ensureOutboxSchema,
 };

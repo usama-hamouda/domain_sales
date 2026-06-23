@@ -13,7 +13,10 @@ export function detectPlatform() {
   const isAndroid = /Android/i.test(ua);
   const isIOS = /iPhone|iPad|iPod/i.test(ua);
   const isMobile = isAndroid || isIOS;
-  return { isAndroid, isIOS, isMobile };
+  const hasTouch = (navigator.maxTouchPoints || 0) > 0;
+  const coarsePointer = window.matchMedia?.("(pointer: coarse)").matches === true;
+  const canUseDeepLinks = isMobile && (hasTouch || coarsePointer);
+  return { isAndroid, isIOS, isMobile, canUseDeepLinks };
 }
 
 function enc(value) {
@@ -86,7 +89,7 @@ export function extractFacebookSlug(value) {
 export function buildGmailUrls({ senderEmail, to, subject, body }, platform = detectPlatform()) {
   const webUrl = `https://mail.google.com/mail/?authuser=${enc(senderEmail)}&view=cm&fs=1&to=${enc(to)}&su=${enc(subject)}&body=${enc(body)}`;
 
-  if (platform.isAndroid) {
+  if (platform.isAndroid && platform.canUseDeepLinks) {
     const appUrl = buildAndroidIntent(
       `send?to=${enc(to)}&subject=${enc(subject)}&body=${enc(body)}`,
       ANDROID_PACKAGES.gmail,
@@ -96,7 +99,7 @@ export function buildGmailUrls({ senderEmail, to, subject, body }, platform = de
     return { appUrl, webUrl };
   }
 
-  if (platform.isIOS) {
+  if (platform.isIOS && platform.canUseDeepLinks) {
     const appUrl = `googlegmail:///co?to=${enc(to)}&subject=${enc(subject)}&body=${enc(body)}`;
     return { appUrl, webUrl };
   }
@@ -109,13 +112,13 @@ export function buildWhatsAppUrls({ prospectWhatsApp, body }, platform = detectP
   const text = enc(body);
   const webUrl = phone ? `https://wa.me/${phone}?text=${text}` : `https://wa.me/?text=${text}`;
 
-  if (platform.isAndroid) {
+  if (platform.isAndroid && platform.canUseDeepLinks) {
     const path = phone ? `send?phone=${phone}&text=${text}` : `send?text=${text}`;
     const appUrl = buildAndroidIntent(path, ANDROID_PACKAGES.whatsapp, webUrl, "whatsapp");
     return { appUrl, webUrl };
   }
 
-  if (platform.isIOS) {
+  if (platform.isIOS && platform.canUseDeepLinks) {
     const appUrl = phone
       ? `whatsapp://send?phone=${phone}&text=${text}`
       : `whatsapp://send?text=${text}`;
@@ -134,7 +137,7 @@ export function buildLinkedInUrls({ prospectLinkedIn }, platform = detectPlatfor
   const slug = extractLinkedInSlug(prospectLinkedIn);
   if (!slug) return { appUrl: null, webUrl };
 
-  if (platform.isAndroid) {
+  if (platform.isAndroid && platform.canUseDeepLinks) {
     const appUrl = buildAndroidIntent(
       `www.linkedin.com/in/${slug}`,
       ANDROID_PACKAGES.linkedin,
@@ -143,7 +146,7 @@ export function buildLinkedInUrls({ prospectLinkedIn }, platform = detectPlatfor
     return { appUrl, webUrl };
   }
 
-  if (platform.isIOS) {
+  if (platform.isIOS && platform.canUseDeepLinks) {
     return { appUrl: `linkedin://in/${slug}`, webUrl };
   }
 
@@ -156,7 +159,7 @@ export function buildInstagramUrls({ prospectInstagram }, platform = detectPlatf
   const handle = extractInstagramHandle(prospectInstagram);
   if (!handle) return { appUrl: null, webUrl };
 
-  if (platform.isAndroid) {
+  if (platform.isAndroid && platform.canUseDeepLinks) {
     const appUrl = buildAndroidIntent(
       `instagram.com/_u/${handle}`,
       ANDROID_PACKAGES.instagram,
@@ -165,7 +168,7 @@ export function buildInstagramUrls({ prospectInstagram }, platform = detectPlatf
     return { appUrl, webUrl };
   }
 
-  if (platform.isIOS) {
+  if (platform.isIOS && platform.canUseDeepLinks) {
     return { appUrl: `instagram://user?username=${enc(handle)}`, webUrl };
   }
 
@@ -178,7 +181,7 @@ export function buildFacebookMessengerUrls({ prospectFacebook }, platform = dete
   const slug = extractFacebookSlug(prospectFacebook);
   const messengerWeb = slug ? `https://m.me/${slug}` : webProfile;
 
-  if (platform.isAndroid && slug) {
+  if (platform.isAndroid && platform.canUseDeepLinks && slug) {
     const appUrl = buildAndroidIntent(
       `m.me/${slug}`,
       ANDROID_PACKAGES.messenger,
@@ -187,7 +190,7 @@ export function buildFacebookMessengerUrls({ prospectFacebook }, platform = dete
     return { appUrl, webUrl: messengerWeb };
   }
 
-  if (platform.isIOS && slug) {
+  if (platform.isIOS && platform.canUseDeepLinks && slug) {
     // m.me is a universal link — opens Messenger when installed, Safari otherwise
     return { appUrl: messengerWeb, webUrl: webProfile };
   }
@@ -220,7 +223,7 @@ export function openOutreachUrl(appUrl, webUrl, platform = detectPlatform()) {
   const web = webUrl || appUrl;
   if (!web && !appUrl) return;
 
-  if (!platform.isMobile) {
+  if (!platform.isMobile || !platform.canUseDeepLinks) {
     window.open(web, "_blank", "noopener,noreferrer");
     return;
   }

@@ -41,6 +41,7 @@ const contactSync = require("./services/prospect-contact-sync");
 const { bindPhoneWhatsApp } = require("./services/phone-whatsapp");
 const remoteDbSync = require("./services/remote-db-sync");
 const syncApply = require("./services/sync-apply");
+const { peekOutboxSince } = require("./services/sync-outbox");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -84,6 +85,30 @@ app.post("/api/sync/apply", syncApply.authMiddleware, (req, res) => {
   } catch (e) {
     console.error("POST /api/sync/apply:", e);
     res.status(500).json({ error: e.message || "Failed to apply sync batch" });
+  }
+});
+
+app.get("/api/sync/changes", syncApply.authMiddleware, (req, res) => {
+  try {
+    const since = Number(req.query.since || 0);
+    const limit = Math.min(1000, Math.max(1, Number(req.query.limit || 400)));
+    const rows = peekOutboxSince(db, Number.isFinite(since) ? since : 0, limit);
+    res.json({
+      ok: true,
+      since: Number.isFinite(since) ? since : 0,
+      maxId: rows.length ? rows[rows.length - 1].id : (Number.isFinite(since) ? since : 0),
+      items: rows.map((r) => ({
+        id: r.id,
+        table: r.table_name,
+        op: r.op,
+        row_pk: r.row_pk,
+        row_json: r.row_json,
+        created_at: r.created_at,
+      })),
+    });
+  } catch (e) {
+    console.error("GET /api/sync/changes:", e);
+    res.status(500).json({ error: e.message || "Failed to fetch sync changes" });
   }
 });
 

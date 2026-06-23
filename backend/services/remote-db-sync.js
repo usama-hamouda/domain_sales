@@ -191,6 +191,7 @@ function startWatcher() {
   watcherStarted = true;
 
   if (remoteApiSync.isEnabled()) {
+    remoteApiSync.start();
     console.log(`[remote-api-sync] Enabled → ${process.env.REMOTE_API_URL} (debounce ${remoteApiSync.getConfig().debounceMs}ms)`);
     return;
   }
