@@ -226,6 +226,12 @@ try {
 }
 
 try {
+  db.exec("ALTER TABLE processing_jobs ADD COLUMN step_mode TEXT DEFAULT 'selected'");
+} catch {
+  // Column already exists.
+}
+
+try {
   db.exec("ALTER TABLE final_prospects ADD COLUMN scrape_status TEXT DEFAULT 'pending'");
 } catch {
   // Column already exists.
@@ -378,6 +384,7 @@ try {
   db.exec("CREATE INDEX IF NOT EXISTS idx_prospect_assignments_prospect ON prospect_account_assignments(prospect_id)");
   require("./services/phone-whatsapp").migratePhoneWhatsAppBinding(db);
   require("./services/sync-outbox").installTriggers(db);
+  require("./services/sync-outbox").clearStuckSuppressFlag(db);
 } catch (e) {
   console.error("Marketing accounts migration error:", e.message);
 }

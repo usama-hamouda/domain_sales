@@ -162,6 +162,11 @@ async function syncNow() {
   return scpSyncNow();
 }
 
+async function pushToRemote() {
+  if (remoteApiSync.isEnabled()) return remoteApiSync.pushToRemote();
+  return scpSyncNow();
+}
+
 function scheduleSyncAfterWrite() {
   if (remoteApiSync.isEnabled()) {
     remoteApiSync.scheduleSyncAfterWrite();
@@ -219,6 +224,7 @@ module.exports = {
   isEnabled,
   getStatus,
   syncNow,
+  pushToRemote,
   scheduleSyncAfterWrite,
   startWatcher,
   middleware,

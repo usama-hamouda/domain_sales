@@ -80,7 +80,7 @@ app.post("/api/sync/apply", syncApply.authMiddleware, (req, res) => {
     if (!Array.isArray(batch)) {
       return res.status(400).json({ error: "batch array required" });
     }
-    const result = syncApply.applyBatch(db, batch);
+    const result = syncApply.applyBatch(db, batch, { replicate: true });
     res.json(result);
   } catch (e) {
     console.error("POST /api/sync/apply:", e);
@@ -541,11 +541,13 @@ app.get("/api/processing/status", (req, res) => {
 });
 
 app.post("/api/processing/start", (req, res) => {
-  const { listId, mode, selectedIds, resultsMode, googleStrategy, googleWaitMin } = req.body;
+  const { listId, mode, selectedIds, steps, stepMode, resultsMode, googleStrategy, googleWaitMin } = req.body;
   res.json(processor.startProcessing({
     listId,
     mode,
     selectedIds,
+    steps,
+    stepMode,
     resultsMode,
     googleStrategy,
     googleWaitMin,

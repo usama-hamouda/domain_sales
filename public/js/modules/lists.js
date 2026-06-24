@@ -30,6 +30,16 @@ const PROCESSING_COL_KEYS = [
   "proc_status",
 ];
 
+const PROC_SOURCE_OPTIONS = [
+  { id: "srcGoogle", step: "google_serp", label: "Google" },
+  { id: "srcLinkedin", step: "linkedin", label: "LI" },
+  { id: "srcInstagram", step: "instagram", label: "IG" },
+  { id: "srcZfbot", step: "zfbot", label: "ZFBot" },
+  { id: "srcCrunchbase", step: "crunchbase", label: "CB" },
+];
+
+const LS_PROC_SOURCES = "domainSales.procSources";
+
 function orderListColumns(cols) {
   const byKey = new Map(cols.map((c) => [c.key, c]));
   const ordered = [];
@@ -129,8 +139,19 @@ export async function initListsModule(root) {
               <option value="20">20 min</option>
             </select>
           </label>
+          <span class="proc-sources" title="Choose which sources to run (uncheck to skip and save traffic)">
+            Sources
+            ${PROC_SOURCE_OPTIONS.map((s) => `
+              <label><input type="checkbox" id="${s.id}" data-proc-step="${s.step}" checked> ${s.label}</label>
+            `).join("")}
+            <label class="proc-sources-all" title="Toggle all sources"><input type="checkbox" id="srcAll" checked> All</label>
+          </span>
+          <label class="proc-results-mode" title="Only run sources not yet completed for each domain">
+            <input type="checkbox" id="procRemainingOnly"> Remaining only
+          </label>
           <button class="primary" id="btnProcStart">▶ Process</button>
           <button id="btnProcSelected">▶ Selected</button>
+          <button id="btnProcRemaining" title="Run only missing sources for all domains">▶ Remaining</button>
           <button id="btnProcPause">⏸ Pause</button>
           <button class="warn" id="btnProcStop">⏹ Stop</button>
         </div>
@@ -178,6 +199,7 @@ export async function initListsModule(root) {
   `;
 
   bindEvents();
+  restoreProcSourcePrefs();
   const lists = await loadSidebar();
   startProcPoll();
   if (currentListId) {
@@ -203,8 +225,12 @@ function bindEvents() {
   document.getElementById("campaignSelect").onchange = (e) => {
     document.getElementById("newCampField").classList.toggle("hidden", e.target.value !== "new");
   };
-  document.getElementById("btnProcStart").onclick = () => startProcessing("all");
-  document.getElementById("btnProcSelected").onclick = () => startProcessing("selected");
+  document.getElementById("btnProcStart").onclick = () => startProcessing("all", "selected");
+  document.getElementById("btnProcSelected").onclick = () => startProcessing("selected", "selected");
+  document.getElementById("btnProcRemaining").onclick = () => {
+    const mode = selectedIds.length ? "selected" : "all";
+    startProcessing(mode, "remaining");
+  };
   document.getElementById("btnProcPause").onclick = () => api("/api/processing/pause", { method: "POST" }).then(() => toast("Paused"));
   document.getElementById("btnProcStop").onclick = () => api("/api/processing/stop", { method: "POST" }).then(() => toast("Stopped"));
   document.getElementById("btnRenameCancel").onclick = () => hideModal("renameModal");
@@ -214,6 +240,67 @@ function bindEvents() {
     if (e.target.id === "resultModal") hideModal("resultModal");
   };
   document.getElementById("resultModalBody")?.addEventListener("click", onResultModalClick);
+  bindProcSourceEvents();
+}
+
+function bindProcSourceEvents() {
+  const allEl = document.getElementById("srcAll");
+  if (!allEl) return;
+
+  const syncAllCheckbox = () => {
+    const boxes = PROC_SOURCE_OPTIONS.map((s) => document.getElementById(s.id)).filter(Boolean);
+    const checked = boxes.filter((el) => el.checked).length;
+    allEl.checked = checked === boxes.length;
+    allEl.indeterminate = checked > 0 && checked < boxes.length;
+  };
+
+  allEl.onchange = () => {
+    const on = allEl.checked;
+    for (const s of PROC_SOURCE_OPTIONS) {
+      const el = document.getElementById(s.id);
+      if (el) el.checked = on;
+    }
+    saveProcSourcePrefs();
+    syncAllCheckbox();
+  };
+
+  for (const s of PROC_SOURCE_OPTIONS) {
+    const el = document.getElementById(s.id);
+    if (!el) continue;
+    el.onchange = () => {
+      saveProcSourcePrefs();
+      syncAllCheckbox();
+    };
+  }
+  syncAllCheckbox();
+}
+
+function restoreProcSourcePrefs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_PROC_SOURCES) || "null");
+    if (!Array.isArray(saved) || !saved.length) return;
+    for (const s of PROC_SOURCE_OPTIONS) {
+      const el = document.getElementById(s.id);
+      if (el) el.checked = saved.includes(s.step);
+    }
+  } catch {
+    // ignore invalid prefs
+  }
+}
+
+function saveProcSourcePrefs() {
+  const steps = getSelectedProcSteps();
+  if (steps.length) localStorage.setItem(LS_PROC_SOURCES, JSON.stringify(steps));
+}
+
+function getSelectedProcSteps() {
+  return PROC_SOURCE_OPTIONS
+    .filter((s) => document.getElementById(s.id)?.checked)
+    .map((s) => s.step);
+}
+
+function formatProcSteps(steps, labels = {}) {
+  return (steps || []).map((s) => labels[s] || s).join(", ");
 }
 
 async function onResultModalClick(e) {
@@ -369,11 +456,13 @@ async function loadList(id) {
 
 function updateStats(rows) {
   const done = rows.filter((r) => r.proc_status === "done").length;
+  const partial = rows.filter((r) => r.proc_status === "partial").length;
   const withFinal = rows.filter((r) => (Number(r.final_prospects_count) || 0) > 0).length;
   const finalTotal = rows.reduce((sum, r) => sum + (Number(r.final_prospects_count) || 0), 0);
   document.getElementById("listStats").innerHTML = `
     <div class="stat-chip">Total: <span>${rows.length}</span></div>
-    <div class="stat-chip">Processed: <span>${done}</span></div>
+    <div class="stat-chip">Done: <span>${done}</span></div>
+    <div class="stat-chip">Partial: <span>${partial}</span></div>
     <div class="stat-chip">With Final: <span>${withFinal}</span></div>
     <div class="stat-chip">Final Prospects: <span>${finalTotal}</span></div>
     <div class="stat-chip">Selected: <span>${selectedIds.length}</span></div>
@@ -657,12 +746,37 @@ async function confirmRename() {
   await loadList(currentListId);
 }
 
-async function startProcessing(mode) {
+async function startProcessing(mode, stepMode = "selected") {
   if (!currentListId) { toast("Load a list first"); return; }
-  const resultsMode = document.getElementById("procResultsMode")?.value || "overwrite";
+
+  const remainingOnly = document.getElementById("procRemainingOnly")?.checked;
+  const effectiveStepMode = remainingOnly || stepMode === "remaining" ? "remaining" : "selected";
+
+  const steps = getSelectedProcSteps();
+  if (!steps.length) { toast("Select at least one source"); return; }
+
+  let resultsMode = document.getElementById("procResultsMode")?.value || "overwrite";
+  if (effectiveStepMode === "remaining") {
+    if (resultsMode === "overwrite") {
+      const sel = document.getElementById("procResultsMode");
+      if (sel) sel.value = "merge";
+      resultsMode = "merge";
+    }
+  } else if (resultsMode === "overwrite") {
+    // overwrite only affects selected sources — safe to continue
+  }
+
   const googleStrategy = document.getElementById("googleSearchStrategy")?.value || "selenium";
   const googleWaitMin = Number(document.getElementById("googleCaptchaWaitMin")?.value || 10);
-  const body = { listId: currentListId, mode, resultsMode, googleStrategy, googleWaitMin };
+  const body = {
+    listId: currentListId,
+    mode,
+    steps,
+    stepMode: effectiveStepMode,
+    resultsMode,
+    googleStrategy,
+    googleWaitMin,
+  };
   if (mode === "selected") {
     if (!selectedIds.length) { toast("Nothing selected"); return; }
     body.selectedIds = selectedIds;
@@ -672,13 +786,20 @@ async function startProcessing(mode) {
     lastProcStatus = "running";
     lastProcIndex = -1;
     lastProcStep = null;
-    const modeLabel = resultsMode === "merge" ? "merging with existing results" : "overwriting previous results";
+    const modeLabel = resultsMode === "merge" ? "merging with existing results" : "overwriting selected sources";
     const strategyLabel = googleStrategy === "selenium_apify_fallback"
       ? "Selenium + Apify fallback"
       : googleStrategy === "selenium_wait_retry"
         ? `Selenium wait+retry (${googleWaitMin}m)`
         : "Selenium only";
-    toast(`Processing ${r.total} domains (${modeLabel}, ${strategyLabel})…`);
+    const stepLabels = PROC_SOURCE_OPTIONS.reduce((acc, s) => {
+      acc[s.step] = s.label;
+      return acc;
+    }, {});
+    const sourcesLabel = effectiveStepMode === "remaining"
+      ? `remaining from [${formatProcSteps(steps, stepLabels)}]`
+      : formatProcSteps(steps, stepLabels);
+    toast(`Processing ${r.total} domains (${sourcesLabel}, ${modeLabel}, ${strategyLabel})…`);
   } else toast(r.error || "Failed");
 }
 
@@ -693,8 +814,11 @@ function startProcPoll() {
       const statusEl = document.getElementById("procStatus");
       if (statusEl) {
         const modeLabel = st.resultsMode === "merge" ? "merge" : "overwrite";
+        const stepLabels = st.stepLabels || {};
+        const activeSteps = (st.steps || []).map((s) => stepLabels[s] || s).join(", ");
+        const stepModeLabel = st.stepMode === "remaining" ? "remaining" : "selected";
         statusEl.textContent = st.status !== "idle" && st.status !== "completed"
-          ? `${st.status} · ${modeLabel} · ${st.currentStep || ""} · ${st.currentIndex + 1}/${st.itemIds?.length || "?"}`
+          ? `${st.status} · ${stepModeLabel} · ${activeSteps} · ${modeLabel} · ${st.currentStep || ""} · ${st.currentIndex + 1}/${st.itemIds?.length || "?"}`
           : st.status === "completed" ? "completed" : "";
       }
       if (st.itemIds?.length) {

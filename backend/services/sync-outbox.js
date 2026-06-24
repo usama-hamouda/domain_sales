@@ -124,6 +124,42 @@ function deleteOutboxUpTo(db, maxId) {
   db.prepare("DELETE FROM sync_outbox WHERE id <= ?").run(maxId);
 }
 
+function enqueueReplicationFeed(db, items = []) {
+  if (!Array.isArray(items) || !items.length) return 0;
+  ensureOutboxSchema(db);
+  const ins = db.prepare(`
+    INSERT INTO sync_outbox (table_name, op, row_pk, row_json)
+    VALUES (?, ?, ?, ?)
+  `);
+  let n = 0;
+  db.exec("BEGIN");
+  try {
+    for (const item of items) {
+      const table = item.table || item.table_name;
+      if (!table) continue;
+      const row = typeof item.row === "object" && item.row !== null
+        ? item.row
+        : (item.row_json ? JSON.parse(item.row_json) : null);
+      ins.run(
+        table,
+        item.op || "upsert",
+        String(item.row_pk),
+        row ? JSON.stringify(row) : null
+      );
+      n += 1;
+    }
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+  return n;
+}
+
+function clearStuckSuppressFlag(db) {
+  db.prepare("DELETE FROM sync_meta WHERE key=?").run(SUPPRESS_KEY);
+}
+
 function outboxCount(db) {
   return db.prepare("SELECT COUNT(*) AS n FROM sync_outbox").get().n;
 }
@@ -136,4 +172,6 @@ module.exports = {
   peekOutboxSince,
   outboxCount,
   ensureOutboxSchema,
+  enqueueReplicationFeed,
+  clearStuckSuppressFlag,
 };

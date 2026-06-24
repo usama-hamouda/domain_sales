@@ -8,9 +8,18 @@ const PYTHON = process.env.PYTHON_EXE || "python";
 const RUNNER = path.join(__dirname, "..", "..", "python", "run_processor.py");
 const STEP_TIMEOUT_MS = Number(process.env.PROCESSOR_STEP_TIMEOUT_MS || 25 * 60 * 1000);
 
-const STEPS = ["google_serp", "linkedin", "instagram", "zfbot", "crunchbase"];
+const ALL_STEPS = ["google_serp", "linkedin", "instagram", "zfbot", "crunchbase"];
+
+const STEP_LABELS = {
+  google_serp: "Google",
+  linkedin: "LinkedIn",
+  instagram: "Instagram",
+  zfbot: "ZFBot",
+  crunchbase: "Crunchbase",
+};
 
 const RESULTS_MODES = ["merge", "overwrite"];
+const STEP_MODES = ["selected", "remaining"];
 
 // Alternate TLDs for Method 2 Google prospecting (site:*.<tld> "company name").
 const GOOGLE_PROSPECT_TLDS = ["net", "org", "io", "au", "ca"];
@@ -24,13 +33,91 @@ let state = {
   itemIds: [],
   currentIndex: 0,
   currentStep: null,
+  steps: [...ALL_STEPS],
+  stepMode: "selected",
   resultsMode: "overwrite",
   googleStrategy: "selenium",
   googleWaitMin: 10,
 };
 
+function normalizeSteps(steps) {
+  if (!Array.isArray(steps) || !steps.length) return [...ALL_STEPS];
+  const requested = new Set(steps.filter((s) => ALL_STEPS.includes(s)));
+  return ALL_STEPS.filter((s) => requested.has(s));
+}
+
+function parseProcProgress(raw) {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((s) => ALL_STEPS.includes(s)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function getCompletedStepsForItem(item) {
+  const fromProgress = parseProcProgress(item.proc_progress);
+  if (fromProgress.length) return fromProgress;
+
+  if (item.proc_status === "done") return [...ALL_STEPS];
+
+  const stepsWithResults = db.prepare(`
+    SELECT DISTINCT step FROM processing_results WHERE list_item_id = ?
+  `).all(item.id).map((r) => r.step);
+  if (stepsWithResults.length) {
+    return ALL_STEPS.filter((s) => stepsWithResults.includes(s));
+  }
+  return [];
+}
+
+function resolveStepsForItem(item, requestedSteps, stepMode) {
+  const pool = normalizeSteps(requestedSteps);
+  if (stepMode === "remaining") {
+    const completed = new Set(getCompletedStepsForItem(item));
+    return pool.filter((s) => !completed.has(s));
+  }
+  return pool;
+}
+
+function removeStepsFromProgress(listItemId, steps) {
+  const row = db.prepare("SELECT id, proc_progress, proc_status FROM domain_list_items WHERE id=?").get(listItemId);
+  const existing = new Set(getCompletedStepsForItem(row || { id: listItemId, proc_progress: null, proc_status: null }));
+  for (const step of steps) existing.delete(step);
+  const completed = ALL_STEPS.filter((s) => existing.has(s));
+  const proc_status = completed.length === ALL_STEPS.length
+    ? "done"
+    : completed.length > 0
+      ? "partial"
+      : "pending";
+  db.prepare(`
+    UPDATE domain_list_items SET proc_progress=?, proc_status=?, updated_at=datetime('now') WHERE id=?
+  `).run(JSON.stringify(completed), proc_status, listItemId);
+}
+
+function updateItemProgress(listItemId, newlyCompletedSteps) {
+  const row = db.prepare("SELECT id, proc_progress, proc_status FROM domain_list_items WHERE id=?").get(listItemId);
+  const existing = new Set(getCompletedStepsForItem(row || { id: listItemId, proc_progress: null, proc_status: null }));
+  for (const step of newlyCompletedSteps) existing.add(step);
+  const completed = ALL_STEPS.filter((s) => existing.has(s));
+  const proc_status = completed.length === ALL_STEPS.length
+    ? "done"
+    : completed.length > 0
+      ? "partial"
+      : "pending";
+  db.prepare(`
+    UPDATE domain_list_items SET proc_progress=?, proc_status=?, updated_at=datetime('now') WHERE id=?
+  `).run(JSON.stringify(completed), proc_status, listItemId);
+}
+
 function getState() {
-  return { ...state, steps: STEPS };
+  return {
+    ...state,
+    allSteps: ALL_STEPS,
+    stepLabels: STEP_LABELS,
+    steps: state.steps || [...ALL_STEPS],
+    stepMode: state.stepMode || "selected",
+  };
 }
 
 function normalizeResultDomain(domain) {
@@ -53,24 +140,16 @@ function resultIdentityKey(r) {
   return null;
 }
 
+function clearResultsForSteps(listItemId, steps) {
+  const delStep = db.prepare("DELETE FROM processing_results WHERE list_item_id = ? AND step = ?");
+  for (const step of steps) {
+    delStep.run(listItemId, step);
+  }
+  updateSummaryCounts(listItemId);
+}
+
 function clearResultsForItem(listItemId) {
-  db.prepare("DELETE FROM processing_results WHERE list_item_id = ?").run(listItemId);
-  db.prepare(`
-    UPDATE domain_list_items SET
-      google_exact=0, google_partial=0, google_title=0,
-      linkedin_exact=0, linkedin_partial=0,
-      instagram_exact=0, instagram_partial=0,
-      zfbot_count=0, crunchbase_exact=0, crunchbase_partial=0,
-      updated_at=datetime('now')
-    WHERE id=?
-  `).run(listItemId);
-  db.prepare(`
-    UPDATE campaign_domains SET
-      google_exact=0, google_partial=0,
-      linkedin_exact=0, instagram_exact=0,
-      zfbot_count=0, crunchbase_exact=0
-    WHERE list_item_id=?
-  `).run(listItemId);
+  clearResultsForSteps(listItemId, ALL_STEPS);
 }
 
 function runPython(step, payload) {
@@ -372,15 +451,23 @@ async function processOneItem(
   googleStrategy = "selenium",
   googleWaitMin = 10
 ) {
+  if (!steps.length) {
+    console.log(`[processor] ${item.domain} → all requested steps already complete, skipping`);
+    return;
+  }
+
   const words = deriveWords(item.domain);
   const rowData = item.row_data ? JSON.parse(item.row_data) : {};
   const registeredTLDs = rowData.registeredTLDs || rowData.registered_tlds || [];
 
   if (resultsMode === "overwrite") {
-    clearResultsForItem(item.id);
+    clearResultsForSteps(item.id, steps);
+    removeStepsFromProgress(item.id, steps);
   }
 
   db.prepare("UPDATE domain_list_items SET proc_status='processing', updated_at=datetime('now') WHERE id=?").run(item.id);
+
+  const completedStepsThisRun = [];
 
   for (const step of steps) {
     while (state.paused && !state.stopped) {
@@ -412,6 +499,7 @@ async function processOneItem(
       ? `${step} (${googleQueries.length} queries)`
       : step;
     console.log(`[processor] ${item.domain} → step ${stepLabel}`);
+    let stepSucceeded = false;
     try {
       const out = await runPython(step, opts);
       if (out.ok === false) {
@@ -420,6 +508,7 @@ async function processOneItem(
           console.error(`[processor] zfbot inputs: dom_s=${out.dom_s} dom_e=${out.dom_e}`);
         }
       } else if (Array.isArray(out.results)) {
+        stepSucceeded = true;
         const { added, skipped } = saveResults(item.id, step, out.results, resultsMode);
         updateSummaryCounts(item.id);
         const saveNote = resultsMode === "merge" && skipped
@@ -446,13 +535,28 @@ async function processOneItem(
       console.error(`[processor] ${step} failed for ${item.domain}:`, e.message);
     }
 
+    if (stepSucceeded) completedStepsThisRun.push(step);
+
     while (state.paused && !state.stopped) {
       await new Promise((r) => setTimeout(r, 500));
     }
   }
 
+  if (completedStepsThisRun.length) {
+    updateItemProgress(item.id, completedStepsThisRun);
+  } else if (state.stopped) {
+    const row = db.prepare("SELECT proc_progress, proc_status FROM domain_list_items WHERE id=?").get(item.id);
+    const completed = getCompletedStepsForItem(row || item);
+    const proc_status = completed.length === ALL_STEPS.length
+      ? "done"
+      : completed.length > 0
+        ? "partial"
+        : "pending";
+    db.prepare("UPDATE domain_list_items SET proc_status=?, updated_at=datetime('now') WHERE id=?")
+      .run(proc_status, item.id);
+  }
+
   if (!state.stopped) {
-    db.prepare("UPDATE domain_list_items SET proc_status='done', updated_at=datetime('now') WHERE id=?").run(item.id);
     try {
       const { added, removed } = syncProspectsForListItem(item.id, resultsMode);
       if (added || removed) {
@@ -463,6 +567,13 @@ async function processOneItem(
       }
     } catch (e) {
       console.error(`[processor] prospect sync failed for ${item.domain}:`, e.message);
+    }
+
+    try {
+      const remoteSync = require("./remote-db-sync");
+      remoteSync.scheduleSyncAfterWrite();
+    } catch {
+      // optional
     }
   }
 }
@@ -476,7 +587,7 @@ async function runLoop() {
     console.warn("[processor] Chrome launch warning:", e.message);
   }
 
-  const steps = STEPS;
+  const requestedSteps = state.steps || ALL_STEPS;
   for (let i = state.currentIndex; i < state.itemIds.length; i++) {
     if (state.stopped) break;
     while (state.paused && !state.stopped) {
@@ -489,14 +600,20 @@ async function runLoop() {
 
     const item = db.prepare("SELECT * FROM domain_list_items WHERE id=?").get(state.itemIds[i]);
     if (!item) continue;
-    await processOneItem(item, steps, state.resultsMode, state.googleStrategy, state.googleWaitMin);
+
+    const stepsForItem = resolveStepsForItem(item, requestedSteps, state.stepMode);
+    await processOneItem(item, stepsForItem, state.resultsMode, state.googleStrategy, state.googleWaitMin);
   }
 
   const finalStatus = state.stopped ? "stopped" : "completed";
   state.status = finalStatus;
   db.prepare("UPDATE processing_jobs SET status=?, updated_at=datetime('now') WHERE id=?").run(finalStatus, state.jobId);
   try {
-    require("./remote-db-sync").scheduleSyncAfterWrite();
+    const remoteSync = require("./remote-db-sync");
+    remoteSync.scheduleSyncAfterWrite();
+    remoteSync.syncNow().catch((err) => {
+      console.error("[processor] remote sync after job:", err.message);
+    });
   } catch {
     // optional
   }
@@ -510,6 +627,8 @@ function startProcessing({
   listId,
   mode = "all",
   selectedIds = [],
+  steps = null,
+  stepMode = "selected",
   resultsMode = "overwrite",
   googleStrategy = "selenium",
   googleWaitMin = 10,
@@ -519,6 +638,11 @@ function startProcessing({
   }
 
   const normalizedResultsMode = RESULTS_MODES.includes(resultsMode) ? resultsMode : "overwrite";
+  const normalizedStepMode = STEP_MODES.includes(stepMode) ? stepMode : "selected";
+  const normalizedSteps = normalizeSteps(steps);
+  if (!normalizedSteps.length) {
+    return { ok: false, error: "Select at least one processing source" };
+  }
   const normalizedGoogleStrategy = ["selenium", "selenium_apify_fallback", "selenium_wait_retry"].includes(googleStrategy)
     ? googleStrategy
     : "selenium";
@@ -532,10 +656,27 @@ function startProcessing({
   }
   if (!itemIds.length) return { ok: false, error: "No items to process" };
 
+  if (normalizedStepMode === "remaining") {
+    const hasWork = itemIds.some((id) => {
+      const item = db.prepare("SELECT * FROM domain_list_items WHERE id=?").get(id);
+      return item && resolveStepsForItem(item, normalizedSteps, "remaining").length > 0;
+    });
+    if (!hasWork) {
+      return { ok: false, error: "No remaining steps for the selected domains" };
+    }
+  }
+
   const info = db.prepare(`
-    INSERT INTO processing_jobs (list_id, status, mode, selected_ids, current_index, steps, results_mode)
-    VALUES (?, 'running', ?, ?, 0, ?, ?)
-  `).run(listId, mode, JSON.stringify(itemIds), JSON.stringify(STEPS), normalizedResultsMode);
+    INSERT INTO processing_jobs (list_id, status, mode, selected_ids, current_index, steps, results_mode, step_mode)
+    VALUES (?, 'running', ?, ?, 0, ?, ?, ?)
+  `).run(
+    listId,
+    mode,
+    JSON.stringify(itemIds),
+    JSON.stringify(normalizedSteps),
+    normalizedResultsMode,
+    normalizedStepMode
+  );
 
   state = {
     jobId: info.lastInsertRowid,
@@ -545,7 +686,9 @@ function startProcessing({
     stopped: false,
     itemIds,
     currentIndex: 0,
-    currentStep: STEPS[0],
+    currentStep: normalizedSteps[0],
+    steps: normalizedSteps,
+    stepMode: normalizedStepMode,
     resultsMode: normalizedResultsMode,
     googleStrategy: normalizedGoogleStrategy,
     googleWaitMin: normalizedGoogleWaitMin,
@@ -560,6 +703,10 @@ function startProcessing({
   if (normalizedGoogleStrategy === "selenium_wait_retry") {
     console.log(`[processor] Google wait+retry enabled (${normalizedGoogleWaitMin} min on CAPTCHA)`);
   }
+  const stepNames = normalizedSteps.map((s) => STEP_LABELS[s] || s).join(", ");
+  console.log(
+    `[processor] Job started: ${itemIds.length} domains, steps=[${stepNames}], mode=${normalizedStepMode}, results=${normalizedResultsMode}`
+  );
 
   runLoop().catch((e) => {
     console.error("[processor] loop error:", e);
@@ -572,6 +719,8 @@ function startProcessing({
     ok: true,
     jobId: state.jobId,
     total: itemIds.length,
+    steps: normalizedSteps,
+    stepMode: normalizedStepMode,
     resultsMode: normalizedResultsMode,
     googleStrategy: normalizedGoogleStrategy,
     googleWaitMin: normalizedGoogleWaitMin,
@@ -613,4 +762,9 @@ module.exports = {
   deriveWords,
   brandSearchQuery,
   buildGoogleSearchQueries,
+  ALL_STEPS,
+  STEP_LABELS,
+  normalizeSteps,
+  getCompletedStepsForItem,
+  resolveStepsForItem,
 };

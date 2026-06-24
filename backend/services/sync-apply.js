@@ -1,5 +1,5 @@
 const { getTableDef, isSyncTable } = require("./sync-registry");
-const { setSuppressOutbox } = require("./sync-outbox");
+const { setSuppressOutbox, enqueueReplicationFeed } = require("./sync-outbox");
 
 function getSyncToken() {
   return process.env.SYNC_API_TOKEN || process.env.REMOTE_API_TOKEN || "";
@@ -78,10 +78,12 @@ function applyMutation(db, item) {
   throw new Error(`Unknown sync op: ${op}`);
 }
 
-function applyBatch(db, items = []) {
+function applyBatch(db, items = [], options = {}) {
   if (!Array.isArray(items) || !items.length) {
     return { ok: true, applied: 0 };
   }
+
+  const replicate = options.replicate === true;
 
   let applied = 0;
   db.exec("BEGIN");
@@ -97,6 +99,15 @@ function applyBatch(db, items = []) {
     throw err;
   } finally {
     setSuppressOutbox(db, false);
+  }
+
+  // Only on the hub receiver (VPS): fan-out so mobile / other clients can pull changes.
+  if (replicate) {
+    try {
+      enqueueReplicationFeed(db, items);
+    } catch (err) {
+      console.error("[sync-apply] replication feed:", err.message);
+    }
   }
 
   return { ok: true, applied };

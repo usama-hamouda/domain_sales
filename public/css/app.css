@@ -191,6 +191,30 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   padding: 5px 8px;
   min-width: 130px;
 }
+.proc-sources {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  flex-wrap: wrap;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface2);
+}
+.proc-sources label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.proc-sources-all {
+  border-left: 1px solid var(--border);
+  padding-left: 8px;
+  margin-left: 2px;
+}
 input[type=file] { display: none; }
 
 textarea, input[type=text], input[type=email], select {
